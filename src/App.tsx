@@ -482,11 +482,11 @@ function App() {
               <br />
               <span className="mt-3 block font-mono text-[11px] font-medium uppercase tracking-wider text-zinc-400">
                 Press{" "}
-                <kbd className="rounded border border-zinc-200 bg-zinc-50 px-1.5 py-0.5 text-zinc-600 shadow-sm">
-                  ⌘
-                </kbd>{" "}
-                +{" "}
-                <kbd className="rounded border border-zinc-200 bg-zinc-50 px-1.5 py-0.5 text-zinc-600 shadow-sm">
+                <kbd className="rounded-sm border border-border bg-muted px-1.5 py-0.5">
+                  Ctrl
+                </kbd>
+                <span className="mx-1">+</span>
+                <kbd className="rounded-sm border border-border bg-muted px-1.5 py-0.5">
                   K
                 </kbd>{" "}
                 to explore
