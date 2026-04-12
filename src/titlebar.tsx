@@ -15,19 +15,6 @@ function close() {
   appWindow.close();
 }
 
-function startDrag() {
-  appWindow.startDragging();
-}
-
-function enableDragging(element: HTMLElement) {
-  element.addEventListener("mousedown", (e) => {
-    if (e.button === 0) {
-      // Left mouse button only
-      startDrag();
-    }
-  });
-}
-
 function Minus() {
   return (
     <svg
@@ -89,26 +76,7 @@ function X() {
   );
 }
 
-function Square() {
-  return (
-    <svg
-      xmlns="http://www.w3.org/2000/svg"
-      width="16"
-      height="16"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className="lucide lucide-square-icon lucide-square"
-    >
-      <rect width="18" height="18" x="3" y="3" rx="2" />
-    </svg>
-  );
-}
-
-export default function TitleBar({ isDark }: { isDark: boolean }) {
+export default function TitleBar() {
   return (
     <div className="fixed top-0 left-0 right-0 z-50 flex items-center w-full h-10 bg-background text-foreground select-none">
       <div className="flex-1 h-full" data-tauri-drag-region />

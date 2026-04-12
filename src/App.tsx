@@ -338,7 +338,7 @@ function App() {
 
   return (
     <div className="h-screen w-screen pt-10 box-border font-sans bg-background text-foreground">
-      <TitleBar isDark={isDark} />
+      <TitleBar />
       <div className="flex h-full flex-col">
         <div className="border-b border-border px-6 py-4">
           <div className="flex items-center gap-3">
