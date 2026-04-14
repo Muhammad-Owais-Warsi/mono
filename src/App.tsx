@@ -16,6 +16,7 @@ import { Button } from "./button";
 import TitleBar from "./titlebar";
 
 const NOTES_DIR = "notes";
+const UI_STATE_KEY = "mono-ui-state";
 
 type Note = {
   id: string;
@@ -44,10 +45,14 @@ function App() {
   const [showWelcome, setShowWelcome] = useState<boolean>(() => {
     return localStorage.getItem("mono-has-opened") !== "true";
   });
+  const [splitId, setSplitId] = useState<string | null>(null);
+  const [activePane, setActivePane] = useState<"left" | "right">("left");
+  const [isSplitPickMode, setIsSplitPickMode] = useState(false);
   const [dirtyIds, setDirtyIds] = useState<Set<string>>(() => new Set());
   const saveTimeoutRef = useRef<number | null>(null);
   const closeConfirmedRef = useRef(false);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const rightTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const paletteOpenRef = useRef(false);
   const [showScrollHint, setShowScrollHint] = useState(false);
   const appWindow = getCurrentWindow();
@@ -106,6 +111,16 @@ function App() {
     localStorage.setItem("notes-theme", theme);
   }, [theme]);
 
+  // Persistent UI State Sync
+  useEffect(() => {
+    const state = {
+      activeId,
+      splitId,
+      activePane,
+    };
+    localStorage.setItem(UI_STATE_KEY, JSON.stringify(state));
+  }, [activeId, splitId, activePane]);
+
   useEffect(() => {
     let isMounted = true;
 
@@ -133,6 +148,19 @@ function App() {
 
         if (!isMounted) return;
 
+        // Hydrate UI State from LocalStorage
+        let storedState: {
+          activeId?: string;
+          splitId?: string | null;
+          activePane?: "left" | "right";
+        } = {};
+        try {
+          const raw = localStorage.getItem(UI_STATE_KEY);
+          if (raw) storedState = JSON.parse(raw);
+        } catch {
+          storedState = {};
+        }
+
         if (loaded.length === 0) {
           const seed = createNote({
             title: "Welcome",
@@ -140,17 +168,34 @@ function App() {
           });
           setNotes([seed]);
           setActiveId(seed.id);
+          setSplitId(null);
+          setActivePane("left");
           await writeTextFile(
             `${NOTES_DIR}/${seed.id}.json`,
             JSON.stringify(seed),
-            {
-              baseDir: BaseDirectory.AppData,
-            },
+            { baseDir: BaseDirectory.AppData },
           );
         } else {
           loaded.sort((a, b) => b.updatedAt - a.updatedAt);
+          const ids = new Set(loaded.map((n) => n.id));
+
+          // Ensure stored IDs actually exist in the loaded files
+          const nextActive =
+            storedState.activeId && ids.has(storedState.activeId)
+              ? storedState.activeId
+              : loaded[0].id;
+
+          const nextSplit =
+            storedState.splitId && ids.has(storedState.splitId)
+              ? storedState.splitId
+              : null;
+
+          const nextPane = storedState.activePane ?? "left";
+
           setNotes(loaded);
-          setActiveId(loaded[0]?.id ?? "");
+          setActiveId(nextActive);
+          setSplitId(nextSplit);
+          setActivePane(nextPane);
         }
       } catch (error) {
         console.error("Failed to load notes", error);
@@ -171,24 +216,44 @@ function App() {
     const handler = (event: KeyboardEvent) => {
       if (paletteOpenRef.current) return;
 
-      const isCmdK =
-        (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k";
-      if (isCmdK) {
+      const isMod = event.metaKey || event.ctrlKey;
+      const key = event.key.toLowerCase();
+
+      if (isMod && key === "k") {
         event.preventDefault();
         setIsPaletteOpen(true);
+        return;
       }
 
-      const isCtrlN =
-        (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "n";
-      if (isCtrlN) {
+      if (isMod && event.shiftKey && key === "n") {
+        event.preventDefault();
+        createSplitNote();
+        return;
+      }
+
+      if (isMod && key === "n") {
         event.preventDefault();
         createNew();
+        return;
+      }
+
+      if (isMod && splitId) {
+        if (event.key === "ArrowLeft" || event.key === "Left") {
+          event.preventDefault();
+          setActivePane("left");
+          textareaRef.current?.focus();
+        } else if (event.key === "ArrowRight" || event.key === "Right") {
+          event.preventDefault();
+          setActivePane("right");
+          rightTextareaRef.current?.focus();
+        }
       }
     };
 
-    window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
-  }, []);
+    window.addEventListener("keydown", handler, { capture: true });
+    return () =>
+      window.removeEventListener("keydown", handler, { capture: true });
+  }, [splitId]);
 
   useEffect(() => {
     paletteOpenRef.current = isPaletteOpen;
@@ -267,40 +332,60 @@ function App() {
     return seed;
   };
 
+  const updateNoteTitle = (noteId: string, title: string) => {
+    const updatedAt = Date.now();
+    setNotes((prev) =>
+      prev.map((note) =>
+        note.id === noteId ? { ...note, title, updatedAt } : note,
+      ),
+    );
+    markDirty(noteId);
+    const note = notes.find((n) => n.id === noteId);
+    if (note) {
+      scheduleSave({ ...note, title, updatedAt });
+    }
+  };
+
+  const updateNoteContent = (noteId: string, content: string) => {
+    const updatedAt = Date.now();
+    setNotes((prev) =>
+      prev.map((note) =>
+        note.id === noteId ? { ...note, content, updatedAt } : note,
+      ),
+    );
+    markDirty(noteId);
+    const note = notes.find((n) => n.id === noteId);
+    if (note) {
+      scheduleSave({ ...note, content, updatedAt });
+    }
+  };
+
   const updateTitle = (title: string) => {
     const current = activeNote ?? ensureActiveNote();
     if (!current) return;
-    const updated = {
-      ...current,
-      title,
-      updatedAt: Date.now(),
-    };
-    setNotes((prev) =>
-      prev.map((note) => (note.id === updated.id ? updated : note)),
-    );
-    markDirty(updated.id);
-    scheduleSave(updated);
+    updateNoteTitle(current.id, title);
   };
 
   const updateContent = (content: string) => {
     const current = activeNote ?? ensureActiveNote();
     if (!current) return;
-    const updated = {
-      ...current,
-      content,
-      updatedAt: Date.now(),
-    };
-    setNotes((prev) =>
-      prev.map((note) => (note.id === updated.id ? updated : note)),
-    );
-    markDirty(updated.id);
-    scheduleSave(updated);
+    updateNoteContent(current.id, content);
   };
 
   function createNew() {
     const newNote = createNote();
     setNotes((prev) => [newNote, ...prev]);
     setActiveId(newNote.id);
+    setActivePane("left");
+    markDirty(newNote.id);
+    scheduleSave(newNote);
+  }
+
+  function createSplitNote() {
+    const newNote = createNote();
+    setNotes((prev) => [newNote, ...prev]);
+    setSplitId(newNote.id);
+    setActivePane("right");
     markDirty(newNote.id);
     scheduleSave(newNote);
   }
@@ -308,6 +393,11 @@ function App() {
   const deleteNote = async (noteId?: string) => {
     const targetId = noteId ?? activeNote?.id;
     if (!targetId) return;
+
+    if (splitId === targetId) {
+      setSplitId(null);
+      setActivePane("left");
+    }
 
     const remaining = notes.filter((note) => note.id !== targetId);
 
@@ -319,7 +409,9 @@ function App() {
       scheduleSave(seed);
     } else {
       setNotes(remaining);
-      setActiveId(remaining[0]?.id ?? "");
+      if (activeId === targetId) {
+        setActiveId(remaining[0]?.id ?? "");
+      }
     }
 
     setDirtyIds((prev) => {
@@ -422,37 +514,150 @@ function App() {
     <div className="h-screen w-screen pt-10 box-border font-sans bg-background text-foreground">
       <TitleBar />
       <div className="flex h-full flex-col">
-        <div className="border-b border-border px-6 py-4">
-          <div className="flex items-center gap-3">
-            <input
-              className="w-full bg-transparent text-2xl font-bold outline-none placeholder:text-muted-foreground/40"
-              placeholder="Title"
-              value={activeNote?.title ?? ""}
-              onChange={(e) => updateTitle(e.currentTarget.value)}
-            />
-            <Button
-              variant="ghost"
-              size="icon-tab"
-              aria-label="Delete note"
-              onClick={() => {
-                if (!activeNote) return;
-                void deleteNote(activeNote.id);
-              }}
-            >
-              <TrashIcon />
-            </Button>
+        {splitId ? (
+          <div className="flex h-full">
+            <div className="flex w-1/2 flex-col border-r border-border">
+              <div className="border-b border-border px-6 py-4">
+                <div className="flex items-center gap-3">
+                  <input
+                    className="w-full bg-transparent text-2xl font-bold outline-none placeholder:text-muted-foreground/40"
+                    placeholder="Title"
+                    value={activeNote?.title ?? ""}
+                    onChange={(e) => updateTitle(e.currentTarget.value)}
+                    onFocus={() => setActivePane("left")}
+                  />
+                  <span
+                    className={`h-2 w-2 rounded-full ${
+                      activePane === "left"
+                        ? "bg-primary"
+                        : "bg-muted-foreground/30"
+                    }`}
+                  />
+                  <Button
+                    variant="ghost"
+                    size="icon-tab"
+                    aria-label="Close split"
+                    onClick={() => {
+                      setSplitId(null);
+                      setActivePane("left");
+                    }}
+                  >
+                    <SplitIcon />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon-tab"
+                    aria-label="Delete note"
+                    onClick={() => {
+                      if (!activeNote) return;
+                      void deleteNote(activeNote.id);
+                    }}
+                  >
+                    <TrashIcon />
+                  </Button>
+                </div>
+              </div>
+              <textarea
+                id="text"
+                ref={textareaRef}
+                className="no-scrollbar flex-1 resize-none bg-transparent px-6 py-5 text-base leading-relaxed outline-none placeholder:text-muted-foreground/40"
+                placeholder="Start typing..."
+                value={activeNote?.content ?? ""}
+                onChange={(e) => updateContent(e.currentTarget.value)}
+                onScroll={updateScrollHint}
+                onFocus={() => setActivePane("left")}
+              />
+            </div>
+            <div className="flex w-1/2 flex-col">
+              <div className="border-b border-border px-6 py-4">
+                <div className="flex items-center gap-3">
+                  <input
+                    className="w-full bg-transparent text-2xl font-bold outline-none placeholder:text-muted-foreground/40"
+                    placeholder="Title"
+                    value={notes.find((n) => n.id === splitId)?.title ?? ""}
+                    onChange={(e) =>
+                      splitId && updateNoteTitle(splitId, e.currentTarget.value)
+                    }
+                    onFocus={() => setActivePane("right")}
+                  />
+                  <span
+                    className={`h-2 w-2 rounded-full ${
+                      activePane === "right"
+                        ? "bg-primary"
+                        : "bg-muted-foreground/30"
+                    }`}
+                  />
+                  <Button
+                    variant="ghost"
+                    size="icon-tab"
+                    aria-label="Delete split note"
+                    onClick={() => {
+                      if (!splitId) return;
+                      void deleteNote(splitId);
+                    }}
+                  >
+                    <TrashIcon />
+                  </Button>
+                </div>
+              </div>
+              <textarea
+                ref={rightTextareaRef}
+                className="no-scrollbar flex-1 resize-none bg-transparent px-6 py-5 text-base leading-relaxed outline-none placeholder:text-muted-foreground/40"
+                placeholder="Start typing..."
+                value={notes.find((n) => n.id === splitId)?.content ?? ""}
+                onChange={(e) =>
+                  splitId && updateNoteContent(splitId, e.currentTarget.value)
+                }
+                onFocus={() => setActivePane("right")}
+              />
+            </div>
           </div>
-        </div>
+        ) : (
+          <>
+            <div className="border-b border-border px-6 py-4">
+              <div className="flex items-center gap-3">
+                <input
+                  className="w-full bg-transparent text-2xl font-bold outline-none placeholder:text-muted-foreground/40"
+                  placeholder="Title"
+                  value={activeNote?.title ?? ""}
+                  onChange={(e) => updateTitle(e.currentTarget.value)}
+                />
+                <Button
+                  variant="ghost"
+                  size="icon-tab"
+                  aria-label="Open split"
+                  onClick={() => {
+                    setIsSplitPickMode(true);
+                    setIsPaletteOpen(true);
+                  }}
+                >
+                  <SplitIcon />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon-tab"
+                  aria-label="Delete note"
+                  onClick={() => {
+                    if (!activeNote) return;
+                    void deleteNote(activeNote.id);
+                  }}
+                >
+                  <TrashIcon />
+                </Button>
+              </div>
+            </div>
 
-        <textarea
-          id="text"
-          ref={textareaRef}
-          className="no-scrollbar flex-1 resize-none bg-transparent px-6 py-5 text-base leading-relaxed outline-none placeholder:text-muted-foreground/40"
-          placeholder="Start typing..."
-          value={activeNote?.content ?? ""}
-          onChange={(e) => updateContent(e.currentTarget.value)}
-          onScroll={updateScrollHint}
-        />
+            <textarea
+              id="text"
+              ref={textareaRef}
+              className="no-scrollbar flex-1 resize-none bg-transparent px-6 py-5 text-base leading-relaxed outline-none placeholder:text-muted-foreground/40"
+              placeholder="Start typing..."
+              value={activeNote?.content ?? ""}
+              onChange={(e) => updateContent(e.currentTarget.value)}
+              onScroll={updateScrollHint}
+            />
+          </>
+        )}
 
         {showScrollHint ? (
           <div className="pointer-events-none fixed bottom-14 left-1/2 -translate-x-1/2 text-muted-foreground">
@@ -489,7 +694,10 @@ function App() {
             type="button"
             className={`absolute inset-0 ${overlayClass} `}
             aria-label="Close command palette"
-            onClick={() => setIsPaletteOpen(false)}
+            onClick={() => {
+              setIsPaletteOpen(false);
+              setIsSplitPickMode(false);
+            }}
           />
           <div className="absolute left-1/2 top-20 w-[560px] -translate-x-1/2">
             <div
@@ -517,7 +725,14 @@ function App() {
                     <Command.Item
                       value="New note"
                       onSelect={() => {
-                        createNew();
+                        if (isSplitPickMode) {
+                          createSplitNote();
+                        } else if (activePane === "right") {
+                          createSplitNote();
+                        } else {
+                          createNew();
+                        }
+                        setIsSplitPickMode(false);
                         setIsPaletteOpen(false);
                         setQuery("");
                       }}
@@ -529,7 +744,18 @@ function App() {
                       <Command.Item
                         key={note.id}
                         value={`${note.id} ${note.title} ${note.content}`}
-                        onSelect={() => selectNote(note.id)}
+                        onSelect={() => {
+                          if (isSplitPickMode || activePane === "right") {
+                            setSplitId(note.id);
+                            setActivePane("right");
+                          } else {
+                            selectNote(note.id);
+                            setActivePane("left");
+                          }
+                          setIsSplitPickMode(false);
+                          setIsPaletteOpen(false);
+                          setQuery("");
+                        }}
                         className={itemClass}
                       >
                         <div className="flex flex-col">
@@ -604,6 +830,23 @@ const TrashIcon = () => (
     <path d="M10 11v6" />
     <path d="M14 11v6" />
     <path d="M6 6l1 14h10l1-14" />
+  </svg>
+);
+
+const SplitIcon = () => (
+  <svg
+    xmlns="http://www.w3.org/2000/svg"
+    width="16"
+    height="16"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <rect width="18" height="18" x="3" y="3" rx="2" />
+    <path d="M12 3v18" />
   </svg>
 );
 
