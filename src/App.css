@@ -181,7 +181,7 @@
         @apply bg-background text-foreground;
     }
     ::selection {
-        @apply bg-popover text-primary-foreground;
+        @apply bg-primary text-primary-foreground;
     }
 
     .no-scrollbar::-webkit-scrollbar,
