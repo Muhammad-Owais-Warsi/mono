@@ -39,7 +39,7 @@ function App() {
   const [query, setQuery] = useState("");
   const [theme, setTheme] = useState<"light" | "dark">(() => {
     const storedTheme = localStorage.getItem("notes-theme");
-    return storedTheme === "dark" ? "dark" : "light";
+    return storedTheme === "light" ? "light" : "dark";
   });
   const [showWelcome, setShowWelcome] = useState<boolean>(() => {
     return localStorage.getItem("mono-has-opened") !== "true";
@@ -47,6 +47,9 @@ function App() {
   const [dirtyIds, setDirtyIds] = useState<Set<string>>(() => new Set());
   const saveTimeoutRef = useRef<number | null>(null);
   const closeConfirmedRef = useRef(false);
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const paletteOpenRef = useRef(false);
+  const [showScrollHint, setShowScrollHint] = useState(false);
   const appWindow = getCurrentWindow();
 
   const activeNote = useMemo(
@@ -75,6 +78,24 @@ function App() {
     }
   };
 
+  const updateScrollHint = () => {
+    const el = textareaRef.current;
+    if (!el) return;
+    const maxScroll = el.scrollHeight - el.clientHeight;
+    setShowScrollHint(maxScroll > 4 && el.scrollTop < maxScroll - 4);
+  };
+
+  useEffect(() => {
+    const id = window.requestAnimationFrame(updateScrollHint);
+    return () => window.cancelAnimationFrame(id);
+  }, [activeNote?.content, activeNote?.id]);
+
+  useEffect(() => {
+    const onResize = () => updateScrollHint();
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, [activeNote?.id]);
+
   useEffect(() => {
     const root = document.documentElement;
     if (theme === "dark") {
@@ -82,9 +103,6 @@ function App() {
     } else {
       root.classList.remove("dark");
     }
-  }, [theme]);
-
-  useEffect(() => {
     localStorage.setItem("notes-theme", theme);
   }, [theme]);
 
@@ -151,6 +169,8 @@ function App() {
 
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
+      if (paletteOpenRef.current) return;
+
       const isCmdK =
         (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k";
       if (isCmdK) {
@@ -169,6 +189,10 @@ function App() {
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
   }, []);
+
+  useEffect(() => {
+    paletteOpenRef.current = isPaletteOpen;
+  }, [isPaletteOpen]);
 
   useEffect(() => {
     let unlisten: (() => void) | null = null;
@@ -273,13 +297,13 @@ function App() {
     scheduleSave(updated);
   };
 
-  const createNew = () => {
+  function createNew() {
     const newNote = createNote();
     setNotes((prev) => [newNote, ...prev]);
     setActiveId(newNote.id);
     markDirty(newNote.id);
     scheduleSave(newNote);
-  };
+  }
 
   const deleteNote = async (noteId?: string) => {
     const targetId = noteId ?? activeNote?.id;
@@ -336,6 +360,64 @@ function App() {
     setShowWelcome(false);
   };
 
+  if (showWelcome) {
+    return (
+      <div className="fixed inset-0 z-[60] flex items-center justify-center bg-background text-foreground backdrop-blur-2xl">
+        <TitleBar />
+        <div className="flex w-full max-w-sm flex-col items-center text-center">
+          <div className="relative mb-10 h-24 w-24">
+            <div className="absolute inset-0 animate-pulse rounded-full bg-gradient-to-tr from-indigo-500 via-blue-400 to-emerald-400 opacity-40 blur-2xl" />
+
+            <div className="relative flex h-full w-full items-center justify-center ">
+              <img
+                src="./logo.png"
+                alt="mono logo"
+                className="h-full w-full object-cover"
+              />
+            </div>
+          </div>
+
+          <h1 className="text-3xl font-semibold tracking-tight">
+            Welcome to{" "}
+            <span className="bg-gradient-to-r from-indigo-500 via-blue-400 to-emerald-400 bg-clip-text text-transparent">
+              mono
+            </span>
+          </h1>
+          <p className="mt-4 text-balance text-sm leading-relaxed text-muted-foreground">
+            Your minimal, fast note space. Designed for focus.
+            <br />
+            <span className="mt-3 block font-mono text-[11px] font-medium uppercase tracking-wider opacity-60">
+              Press{" "}
+              <kbd className="rounded-sm border border-border bg-muted px-1.5 py-0.5">
+                Ctrl
+              </kbd>
+              <span className="mx-1">+</span>
+              <kbd className="rounded-sm border border-border bg-muted px-1.5 py-0.5">
+                K
+              </kbd>{" "}
+              to explore
+            </span>
+          </p>
+
+          <div className="mt-12 w-full px-10">
+            <Button
+              variant="default"
+              size="lg"
+              onClick={dismissWelcome}
+              className="w-full rounded-full bg-gradient-to-tr from-indigo-500 via-blue-400 to-emerald-400 py-6 text-base font-semibold text-white transition-transform hover:scale-[1.02] active:scale-[0.98] shadow-lg shadow-blue-100"
+            >
+              Get started
+            </Button>
+          </div>
+        </div>
+
+        <div className="fixed bottom-4 right-4 z-50">
+          <ThemeToggle isDark={isDark} setTheme={setTheme} />
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="h-screen w-screen pt-10 box-border font-sans bg-background text-foreground">
       <TitleBar />
@@ -343,7 +425,7 @@ function App() {
         <div className="border-b border-border px-6 py-4">
           <div className="flex items-center gap-3">
             <input
-              className="w-full bg-transparent text-2xl font-bold outline-none placeholder:text-muted-foreground/70"
+              className="w-full bg-transparent text-2xl font-bold outline-none placeholder:text-muted-foreground/40"
               placeholder="Title"
               value={activeNote?.title ?? ""}
               onChange={(e) => updateTitle(e.currentTarget.value)}
@@ -363,12 +445,32 @@ function App() {
         </div>
 
         <textarea
-          className="flex-1 resize-none bg-transparent px-6 py-5 text-sm leading-relaxed outline-none placeholder:text-muted-foreground/70"
+          id="text"
+          ref={textareaRef}
+          className="no-scrollbar flex-1 resize-none bg-transparent px-6 py-5 text-base leading-relaxed outline-none placeholder:text-muted-foreground/40"
           placeholder="Start typing..."
           value={activeNote?.content ?? ""}
           onChange={(e) => updateContent(e.currentTarget.value)}
+          onScroll={updateScrollHint}
         />
 
+        {showScrollHint ? (
+          <div className="pointer-events-none fixed bottom-14 left-1/2 -translate-x-1/2 text-muted-foreground">
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="m6 9 6 6 6-6" />
+            </svg>
+          </div>
+        ) : null}
         <div className="pointer-events-none fixed bottom-4 left-4 text-[11px] text-muted-foreground">
           <kbd className="rounded-sm border border-border bg-muted px-1.5 py-0.5">
             Ctrl
@@ -393,15 +495,7 @@ function App() {
             <div
               className={`overflow-hidden rounded-2xl border shadow-2xl backdrop-blur-xl ${panelClass}`}
             >
-              <Command
-                className="w-full"
-                onKeyDown={(event) => {
-                  if (event.key === "Escape") {
-                    event.preventDefault();
-                    setIsPaletteOpen(false);
-                  }
-                }}
-              >
+              <Command className="w-full">
                 <div
                   className={`border-b border-border ${glassGradient} px-4 py-3`}
                 >
@@ -414,7 +508,7 @@ function App() {
                   />
                 </div>
 
-                <Command.List className="max-h-80 overflow-y-auto p-2">
+                <Command.List className="no-scrollbar max-h-80 overflow-y-auto p-2">
                   <Command.Empty className="px-3 py-2 text-sm text-muted-foreground">
                     No results.
                   </Command.Empty>
@@ -434,7 +528,7 @@ function App() {
                     {notes.map((note) => (
                       <Command.Item
                         key={note.id}
-                        value={`${note.title} ${note.content}`}
+                        value={`${note.id} ${note.title} ${note.content}`}
                         onSelect={() => selectNote(note.id)}
                         className={itemClass}
                       >
@@ -451,57 +545,6 @@ function App() {
                   </Command.Group>
                 </Command.List>
               </Command>
-            </div>
-          </div>
-        </div>
-      ) : null}
-
-      {showWelcome ? (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-white/80 backdrop-blur-2xl">
-          <div className="flex w-full max-w-sm flex-col items-center text-center">
-            <div className="relative mb-10 h-24 w-24">
-              <div className="absolute inset-0 animate-pulse rounded-full bg-gradient-to-tr from-indigo-500 via-blue-400 to-emerald-400 opacity-40 blur-2xl" />
-
-              <div className="relative flex h-full w-full items-center justify-center ">
-                <img
-                  src="./logo.png"
-                  alt="mono logo"
-                  className="h-full w-full object-cover"
-                />
-              </div>
-            </div>
-
-            <h1 className="text-3xl font-semibold tracking-tight text-zinc-900">
-              Welcome to{" "}
-              <span className="bg-gradient-to-r from-indigo-500 via-blue-400 to-emerald-400 bg-clip-text text-transparent">
-                mono
-              </span>
-            </h1>
-            <p className="mt-4 text-balance text-sm leading-relaxed text-zinc-500">
-              Your minimal, fast note space. Designed for focus.
-              <br />
-              <span className="mt-3 block font-mono text-[11px] font-medium uppercase tracking-wider text-zinc-400">
-                Press{" "}
-                <kbd className="rounded-sm border border-border bg-muted px-1.5 py-0.5">
-                  Ctrl
-                </kbd>
-                <span className="mx-1">+</span>
-                <kbd className="rounded-sm border border-border bg-muted px-1.5 py-0.5">
-                  K
-                </kbd>{" "}
-                to explore
-              </span>
-            </p>
-
-            <div className="mt-12 w-full px-10">
-              <Button
-                variant="default"
-                size="lg"
-                onClick={dismissWelcome}
-                className="w-full rounded-full bg-gradient-to-tr from-indigo-500 via-blue-400 to-emerald-400 py-6 text-base font-semibold text-white transition-transform hover:scale-[1.02] active:scale-[0.98] shadow-lg shadow-blue-100"
-              >
-                Get started
-              </Button>
             </div>
           </div>
         </div>

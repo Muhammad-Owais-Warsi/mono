@@ -24,6 +24,7 @@
   },
   "bundle": {
     "active": true,
+    "createUpdaterArtifacts": true,
     "targets": "all",
     "icon": [
       "icons/32x32.png",
@@ -32,5 +33,16 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ]
+  },
+  "plugins": {
+    "updater": {
+      "windows": {
+        "installMode": "passive"
+      },
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEU2MUZENjhFOEJFNEM4NDkKUldSSnlPU0xqdFlmNWxQRmVqeUhpUmtXOVlabVNhY05YcTRLdWtzeVhMT25VQ1lFU0lnamhnSkoK",
+      "endpoints": [
+        "https://github.com/Muhammad-Owais-Warsi/mono/releases/tag/app-v0.1.0"
+      ]
+    }
   }
 }

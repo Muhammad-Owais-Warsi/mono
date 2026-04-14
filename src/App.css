@@ -183,4 +183,20 @@
     ::selection {
         @apply bg-primary text-primary-foreground;
     }
+
+    .no-scrollbar::-webkit-scrollbar,
+    textarea.no-scrollbar::-webkit-scrollbar {
+        display: none;
+    }
+
+    .no-scrollbar {
+        -ms-overflow-style: none;
+        scrollbar-width: none;
+        overflow: auto;
+    }
+
+    textarea.no-scrollbar {
+        -ms-overflow-style: none;
+        scrollbar-width: none;
+    }
 }
