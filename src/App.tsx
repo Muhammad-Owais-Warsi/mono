@@ -286,7 +286,7 @@ function App() {
           >
             <div className="flex items-center px-10 pt-10 gap-3">
               <input
-                className="flex-1 bg-transparent text-4xl font-semibold outline-none placeholder:opacity-20"
+                className="flex-1 bg-transparent text-xl font-semibold outline-none placeholder:opacity-20"
                 placeholder="Title"
                 value={activeNote?.title ?? ""}
                 onChange={(e) =>
@@ -300,7 +300,7 @@ function App() {
             </div>
             <textarea
               ref={textareaRef}
-              className="flex-1 px-10 py-6 bg-transparent outline-none resize-none leading-relaxed text-lg opacity-80"
+              className="no-scrollbar flex-1 px-10 py-6 bg-transparent outline-none resize-none leading-relaxed text-base opacity-80"
               placeholder="Start writing..."
               value={activeNote?.content ?? ""}
               onChange={(e) =>
@@ -315,7 +315,7 @@ function App() {
             <div className="w-1/2 flex flex-col min-w-0 bg-accent/5 relative">
               <div className="flex items-center px-10 pt-10 gap-3">
                 <input
-                  className="flex-1 bg-transparent text-4xl font-semibold outline-none placeholder:opacity-20"
+                  className="flex-1 bg-transparent text-xl font-semibold outline-none placeholder:opacity-20"
                   placeholder="Title"
                   value={splitNote?.title ?? ""}
                   onChange={(e) =>
@@ -329,7 +329,7 @@ function App() {
               </div>
               <textarea
                 ref={rightTextareaRef}
-                className="flex-1 px-10 py-6 bg-transparent outline-none resize-none leading-relaxed text-lg opacity-80"
+                className="no-scrollbar flex-1 px-10 py-6 bg-transparent outline-none resize-none leading-relaxed text-base opacity-80"
                 placeholder="Split note..."
                 value={splitNote?.content ?? ""}
                 onChange={(e) =>
